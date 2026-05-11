@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { saveAccount } from "@/lib/db";
 import { chromium } from "playwright";
 import { notifyClients } from "@/lib/sse";
 
@@ -12,6 +11,8 @@ interface AutomationRequest {
   headless: boolean;
   autoVerify: boolean;
 }
+
+const DEFAULT_CONCURRENCY = 1;
 
 const MAIL_TM_API = "https://api.mail.tm";
 
@@ -208,19 +209,6 @@ async function registerWindsurfAccount(
       await new Promise((r) => setTimeout(r, 5000));
     }
 
-    // Save account to database
-    const saved = saveAccount(
-      email,
-      config.password,
-      config.firstName,
-      config.lastName
-    );
-
-    if (!saved) {
-      notifyClients(`Database save failed: ${email}`, "error");
-      return { success: false, error: "Database save failed (duplicate?)" };
-    }
-
     notifyClients(`Account created: ${email}`, "success");
     return { success: true };
   } catch (error: any) {
@@ -253,12 +241,12 @@ export async function POST(request: Request) {
       error?: string;
     }[] = [];
 
-    const totalChunks = Math.ceil(config.accountCount / config.concurrency);
+    const totalChunks = Math.ceil(config.accountCount / DEFAULT_CONCURRENCY);
 
     for (let chunk = 0; chunk < totalChunks; chunk++) {
       const chunkSize = Math.min(
-        config.concurrency,
-        config.accountCount - chunk * config.concurrency
+        DEFAULT_CONCURRENCY,
+        config.accountCount - chunk * DEFAULT_CONCURRENCY
       );
 
       const chunkPromises = Array.from({ length: chunkSize }, async () => {

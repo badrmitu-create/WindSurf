@@ -1,12 +1,16 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import type {
   AutomationConfig,
   LogEntry,
   AutomationStatus,
   Account,
 } from "@/types";
+import {
+  getAccounts as getStoredAccounts,
+  getStats as getStoredStats,
+} from "@/lib/localStorage";
 
 interface AutomationContextType {
   config: AutomationConfig;
@@ -18,13 +22,14 @@ interface AutomationContextType {
   setStatus: (status: Partial<AutomationStatus>) => void;
   accounts: Account[];
   setAccounts: (accounts: Account[]) => void;
+  refreshAccounts: () => void;
 }
 
 const AutomationContext = createContext<AutomationContextType | null>(null);
 
 const defaultConfig: AutomationConfig = {
   accountCount: 5,
-  concurrency: 10,
+  concurrency: 1,
   firstName: "Yousef",
   lastName: "Sayed",
   password: "Yousef231",
@@ -46,6 +51,15 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [status, setStatusState] = useState<AutomationStatus>(defaultStatus);
   const [accounts, setAccounts] = useState<Account[]>([]);
+
+  // Load accounts from localStorage on mount
+  useEffect(() => {
+    setAccounts(getStoredAccounts());
+  }, []);
+
+  const refreshAccounts = useCallback(() => {
+    setAccounts(getStoredAccounts());
+  }, []);
 
   const setConfig = useCallback(
     (newConfig: Partial<AutomationConfig>) => {
@@ -94,6 +108,7 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
         setStatus,
         accounts,
         setAccounts,
+        refreshAccounts,
       }}
     >
       {children}

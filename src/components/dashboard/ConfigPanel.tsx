@@ -4,7 +4,7 @@ import React from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Toggle } from "@/components/ui/Toggle";
-import { Settings, Cpu, Eye, Shield } from "lucide-react";
+import { Settings, Cpu, Eye, Shield, Hash } from "lucide-react";
 import type { AutomationConfig } from "@/types";
 
 interface ConfigPanelProps {
@@ -32,31 +32,13 @@ export function ConfigPanel({ config, onChange }: ConfigPanelProps) {
             max="100"
             value={config.accountCount}
             onChange={(e) =>
-              onChange({ accountCount: parseInt(e.target.value) || 1 })
+              onChange({ ...config, accountCount: parseInt(e.target.value) })
             }
+            icon={<Hash className="w-4 h-4" />}
           />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-            Concurrency Level
-          </label>
-          <div className="flex items-center gap-3">
-            <Cpu className="w-4 h-4 text-zinc-500" />
-            <Input
-              type="range"
-              min="1"
-              max="20"
-              value={config.concurrency}
-              onChange={(e) =>
-                onChange({ concurrency: parseInt(e.target.value) })
-              }
-              className="flex-1"
-            />
-            <span className="text-sm font-medium text-zinc-200 w-8">
-              {config.concurrency}
-            </span>
-          </div>
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Number of accounts to create in this batch
+          </p>
         </div>
 
         <div className="space-y-4">

@@ -9,6 +9,12 @@ import { ActivityMonitor } from "@/components/dashboard/ActivityMonitor";
 import { Button } from "@/components/ui/Button";
 import { Play, Copy, RefreshCw } from "lucide-react";
 import type { DashboardStats } from "@/types";
+import {
+  getStats as getStoredStats,
+  deleteAccount as deleteStoredAccount,
+  getUnusedAccount as getStoredUnusedAccount,
+  saveAccount as saveStoredAccount,
+} from "@/lib/localStorage";
 
 export default function DashboardPage() {
   const {
@@ -19,7 +25,7 @@ export default function DashboardPage() {
     status,
     setStatus,
     accounts,
-    setAccounts,
+    refreshAccounts,
   } = useAutomation();
 
   const [stats, setStats] = useState<DashboardStats>({
@@ -28,37 +34,24 @@ export default function DashboardPage() {
     usedToday: 0,
     successRate: 0,
   });
-  const [isLoading, setIsLoading] = useState(false);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
 
-  const fetchAccounts = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/accounts");
-      const data = await response.json();
-      setAccounts(data.accounts);
-      setStats({
-        totalAccounts: data.stats.total,
-        unusedToday: data.stats.unusedToday,
-        usedToday: data.stats.usedToday,
-        successRate:
-          data.stats.total > 0
-            ? ((data.stats.total - data.stats.usedToday) / data.stats.total) * 100
-            : 0,
-      });
-    } catch (error) {
-      addLog({ level: "error", message: "Failed to fetch accounts" });
-    } finally {
-      setIsLoading(false);
-    }
+  const refreshData = () => {
+    refreshAccounts();
+    setStats(getStoredStats());
   };
 
   useEffect(() => {
-    fetchAccounts();
+    refreshData();
     return () => {
       if (eventSource) eventSource.close();
     };
   }, []);
+
+  // Update stats whenever accounts change
+  useEffect(() => {
+    setStats(getStoredStats());
+  }, [accounts]);
 
   const connectLogStream = () => {
     const es = new EventSource("/api/automation/logs");
@@ -92,8 +85,19 @@ export default function DashboardPage() {
 
       const data = await response.json();
 
-      if (data.success) {
-        await fetchAccounts();
+      if (data.success && data.results) {
+        // Save successful accounts to localStorage
+        data.results.forEach((result: any) => {
+          if (result.success) {
+            saveStoredAccount({
+              email: result.email,
+              password: config.password,
+              first_name: config.firstName,
+              last_name: config.lastName,
+            });
+          }
+        });
+        refreshData();
       }
     } catch (error) {
       addLog({ level: "error", message: "Automation request failed" });
@@ -106,13 +110,11 @@ export default function DashboardPage() {
 
   const getUnusedAccount = async () => {
     try {
-      const response = await fetch("/api/accounts/unused");
-      const data = await response.json();
-
-      if (data.email) {
-        await navigator.clipboard.writeText(data.email);
-        addLog({ level: "success", message: `Copied: ${data.email}` });
-        await fetchAccounts();
+      const account = getStoredUnusedAccount();
+      if (account) {
+        await navigator.clipboard.writeText(account.email);
+        addLog({ level: "success", message: `Copied: ${account.email}` });
+        refreshData();
       } else {
         addLog({ level: "warning", message: "No unused accounts available" });
       }
@@ -121,17 +123,12 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDeleteAccount = async (id: number) => {
-    try {
-      const response = await fetch(`/api/accounts?id=${id}`, {
-        method: "DELETE",
-      });
-
-      if (response.ok) {
-        addLog({ level: "info", message: "Account deleted" });
-        await fetchAccounts();
-      }
-    } catch (error) {
+  const handleDeleteAccount = (id: number) => {
+    const deleted = deleteStoredAccount(id);
+    if (deleted) {
+      addLog({ level: "info", message: "Account deleted" });
+      refreshData();
+    } else {
       addLog({ level: "error", message: "Failed to delete account" });
     }
   };
@@ -151,7 +148,7 @@ export default function DashboardPage() {
                 <Copy className="w-4 h-4" />
                 Get Unused
               </Button>
-              <Button variant="secondary" onClick={fetchAccounts} loading={isLoading}>
+              <Button variant="secondary" onClick={refreshData}>
                 <RefreshCw className="w-4 h-4" />
                 Refresh
               </Button>
