@@ -5,9 +5,9 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import { Search, Copy, Trash2, ExternalLink } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
 import type { Account, TableFilters } from "@/types";
-import { formatDate, copyToClipboard, isUsedToday } from "@/lib/utils";
+import { formatDate, isUsedToday } from "@/lib/utils";
 
 interface AccountTableProps {
   accounts: Account[];
@@ -21,7 +21,6 @@ export function AccountTable({ accounts, onDelete }: AccountTableProps) {
     sortField: "created_at",
     sortDirection: "desc",
   });
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   const filteredAccounts = accounts
     .filter((account) => {
@@ -51,15 +50,6 @@ export function AccountTable({ accounts, onDelete }: AccountTableProps) {
         (a[filters.sortField] > b[filters.sortField] ? 1 : -1) * modifier
       );
     });
-
-  const handleCopy = async (email: string, password: string) => {
-    const credentials = `Email: ${email}\nPassword: ${password}`;
-    const success = await copyToClipboard(credentials);
-    if (success) {
-      setCopyFeedback(email);
-      setTimeout(() => setCopyFeedback(null), 2000);
-    }
-  };
 
   const handleSort = (field: TableFilters["sortField"]) => {
     setFilters((prev) => ({
@@ -166,15 +156,6 @@ export function AccountTable({ accounts, onDelete }: AccountTableProps) {
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            handleCopy(account.email, account.password)
-                          }
-                        >
-                          <Copy className="w-4 h-4" />
-                        </Button>
                         {onDelete && (
                           <Button
                             variant="ghost"
@@ -195,12 +176,6 @@ export function AccountTable({ accounts, onDelete }: AccountTableProps) {
         <div className="mt-4 text-sm text-zinc-500">
           Showing {filteredAccounts.length} of {accounts.length} accounts
         </div>
-        {copyFeedback && (
-          <div className="fixed bottom-6 right-6 bg-success/20 border border-success/30 text-success px-4 py-3 rounded-lg shadow-lg animate-slide-up flex items-center gap-2 z-50">
-            <Copy className="w-4 h-4" />
-            Copied credentials for {copyFeedback}
-          </div>
-        )}
       </CardContent>
     </Card>
   );

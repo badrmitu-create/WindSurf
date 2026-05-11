@@ -62,6 +62,17 @@ export default function DashboardPage() {
         level: log.level,
         message: log.message,
       });
+      // If this message includes account data, save it to localStorage immediately
+      if (log.account) {
+        saveStoredAccount({
+          email: log.account.email,
+          password: log.account.password,
+          first_name: log.account.first_name,
+          last_name: log.account.last_name,
+        });
+        refreshAccounts();
+        setStats(getStoredStats());
+      }
     };
     es.onerror = () => {
       es.close();
@@ -85,21 +96,6 @@ export default function DashboardPage() {
       });
 
       const data = await response.json();
-
-      if (data.success && data.results) {
-        // Save successful accounts to localStorage
-        data.results.forEach((result: any) => {
-          if (result.success) {
-            saveStoredAccount({
-              email: result.email,
-              password: config.password,
-              first_name: config.firstName,
-              last_name: config.lastName,
-            });
-          }
-        });
-        refreshData();
-      }
     } catch (error) {
       addLog({ level: "error", message: "Automation request failed" });
     } finally {

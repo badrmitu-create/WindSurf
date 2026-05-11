@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { chromium } from "playwright";
-import { notifyClients } from "@/lib/sse";
+import { notifyClients, notifyAccountCreated } from "@/lib/sse";
 
 interface AutomationRequest {
   accountCount: number;
@@ -159,7 +159,23 @@ async function registerWindsurfAccount(
     await page.click('button[type="submit"]');
 
     // --- PAGE 2: Password ---
-    await page.waitForSelector('input[name="password"]', { timeout: 10000 });
+    // Wait for either the password page or an error on the current page
+    const passwordResult = await Promise.race([
+      page.waitForSelector('input[name="password"]', { timeout: 30000 })
+        .then(() => 'password_page' as const),
+      page.waitForSelector('[role="alert"], .error, .alert, [data-error]', { timeout: 30000 })
+        .then(() => 'error' as const),
+      new Promise<'timeout'>(r => setTimeout(() => r('timeout'), 30000)),
+    ]);
+
+    if (passwordResult !== 'password_page') {
+      const errorText = passwordResult === 'error'
+        ? await page.locator('[role="alert"], .error, .alert, [data-error]').first().textContent().catch(() => 'Unknown error')
+        : 'Password page did not load in time';
+      notifyClients(`Registration failed at password step: ${errorText}`, "error");
+      return { success: false, error: errorText || undefined };
+    }
+
     await page.fill('input[name="password"]', config.password);
     await page.fill('input[name="confirmPassword"]', config.password);
     await page.click('button[type="submit"]');
@@ -209,7 +225,7 @@ async function registerWindsurfAccount(
       await new Promise((r) => setTimeout(r, 5000));
     }
 
-    notifyClients(`Account created: ${email}`, "success");
+    notifyAccountCreated(email, config.password, config.firstName, config.lastName);
     return { success: true };
   } catch (error: any) {
     notifyClients(`Registration failed: ${error.message || "Unknown error"}`, "error");

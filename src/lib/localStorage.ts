@@ -1,6 +1,12 @@
 import type { Account, DashboardStats } from "@/types";
 
 const STORAGE_KEY = "windsurf_accounts";
+let idCounter = 0;
+
+function generateId(): number {
+  idCounter++;
+  return Date.now() * 1000 + idCounter;
+}
 
 export function getAccounts(): Account[] {
   if (typeof window === "undefined") return [];
@@ -15,7 +21,7 @@ export function getAccounts(): Account[] {
 export function saveAccount(account: Omit<Account, "id" | "created_at" | "last_used_at">): Account {
   const accounts = getAccounts();
   const newAccount: Account = {
-    id: Date.now(),
+    id: generateId(),
     email: account.email,
     password: account.password,
     first_name: account.first_name,

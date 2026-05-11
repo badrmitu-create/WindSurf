@@ -26,6 +26,33 @@ export function notifyClients(message: string, level: string = "info") {
   });
 }
 
+export function notifyAccountCreated(email: string, password: string, firstName: string, lastName: string) {
+  const data = JSON.stringify({
+    message: `Account created: ${email}`,
+    level: "success",
+    account: { email, password, first_name: firstName, last_name: lastName },
+    timestamp: new Date().toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+  });
+
+  const chunk = `data: ${data}\n\n`;
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(chunk);
+
+  clients.forEach((controller) => {
+    try {
+      controller.enqueue(bytes);
+    } catch {
+      clients.delete(controller);
+    }
+  });
+}
+
 export function addClient(controller: ReadableStreamDefaultController) {
   clients.add(controller);
 }
