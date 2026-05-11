@@ -127,16 +127,6 @@ async function registerWindsurfAccount(
     });
     const page = await context.newPage();
 
-    // Block unnecessary resources to speed up page loads
-    await page.route("**/*", (route: any) => {
-      const resourceType = route.request().resourceType();
-      if (["image", "font", "media"].includes(resourceType)) {
-        route.abort();
-      } else {
-        route.continue();
-      }
-    });
-
     // Navigate to registration page
     notifyClients(`Registering: ${email.slice(0, 15)}...`, "info");
     await page.goto("https://windsurf.com/account/register", {
@@ -161,6 +151,8 @@ async function registerWindsurfAccount(
     } catch {}
 
     await page.click('button[type="submit"]');
+    // Wait for form submission to process
+    await new Promise((r) => setTimeout(r, 2000));
 
     // --- PAGE 2: Password ---
     // Wait for either the password page or an error on the current page
@@ -173,10 +165,12 @@ async function registerWindsurfAccount(
     ]);
 
     if (passwordResult !== 'password_page') {
+      const currentUrl = page.url();
+      const pageText = await page.locator("body").textContent().catch(() => "").then((t: string | null) => t?.slice(0, 200) || "");
       const errorText = passwordResult === 'error'
         ? await page.locator('[role="alert"], .error, .alert, [data-error]').first().textContent().catch(() => 'Unknown error')
         : 'Password page did not load in time';
-      notifyClients(`Registration failed at password step: ${errorText}`, "error");
+      notifyClients(`Registration failed at password step: ${errorText} | URL: ${currentUrl} | Page: ${pageText}`, "error");
       return { success: false, error: errorText || undefined };
     }
 
@@ -245,7 +239,7 @@ async function registerWindsurfAccount(
 }
 
 export async function POST(request: Request) {
-  let browser;
+  let browser: any;
   try {
     const config: AutomationRequest = await request.json();
 
@@ -264,9 +258,6 @@ export async function POST(request: Request) {
         "--disable-setuid-sandbox",
         "--disable-gpu",
         "--disable-dev-shm-usage",
-        "--disable-extensions",
-        "--no-first-run",
-        "--disable-background-networking",
       ],
     });
 
@@ -278,37 +269,49 @@ export async function POST(request: Request) {
       error?: string;
     }[] = [];
 
-    // Process accounts sequentially (concurrency=1) using shared browser
-    for (let i = 0; i < config.accountCount; i++) {
-      // Small delay between accounts
-      if (i > 0) {
+    // Process accounts in parallel batches of 2
+    const CONCURRENCY = 2;
+    for (let i = 0; i < config.accountCount; i += CONCURRENCY) {
+      const batchSize = Math.min(CONCURRENCY, config.accountCount - i);
+
+      const batchPromises = Array.from({ length: batchSize }, async (_, idx) => {
+        // Stagger slightly to avoid hitting Mail.tm simultaneously
+        if (idx > 0) {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        const mailAccount = await createMailTmAccount();
+        if (!mailAccount) {
+          notifyClients("Mail.tm account creation failed", "error");
+          return {
+            email: "failed",
+            success: false,
+            error: "Mail.tm account creation failed",
+          };
+        }
+
+        notifyClients(`Email created: ${mailAccount.email}`, "info");
+
+        const result = await registerWindsurfAccount(
+          mailAccount.email,
+          mailAccount.password,
+          config,
+          browser
+        );
+
+        return {
+          email: mailAccount.email,
+          ...result,
+        };
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+
+      // Small delay between batches
+      if (i + CONCURRENCY < config.accountCount) {
         await new Promise((r) => setTimeout(r, 2000));
       }
-
-      const mailAccount = await createMailTmAccount();
-      if (!mailAccount) {
-        notifyClients("Mail.tm account creation failed", "error");
-        results.push({
-          email: "failed",
-          success: false,
-          error: "Mail.tm account creation failed",
-        });
-        continue;
-      }
-
-      notifyClients(`Email created: ${mailAccount.email}`, "info");
-
-      const result = await registerWindsurfAccount(
-        mailAccount.email,
-        mailAccount.password,
-        config,
-        browser
-      );
-
-      results.push({
-        email: mailAccount.email,
-        ...result,
-      });
     }
 
     const successCount = results.filter((r) => r.success).length;
