@@ -12,8 +12,6 @@ interface AutomationRequest {
   autoVerify: boolean;
 }
 
-const DEFAULT_CONCURRENCY = 1;
-
 const MAIL_TM_API = "https://api.mail.tm";
 
 function generateUsername(): string {
@@ -118,20 +116,26 @@ async function waitForVerificationCode(
 async function registerWindsurfAccount(
   email: string,
   mailPassword: string,
-  config: AutomationRequest
+  config: AutomationRequest,
+  browser: any
 ): Promise<{ success: boolean; error?: string }> {
-  let browser;
+  let context;
   try {
-    browser = await chromium.launch({
-      headless: config.headless,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
-
-    const context = await browser.newContext({
+    context = await browser.newContext({
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
     });
     const page = await context.newPage();
+
+    // Block unnecessary resources to speed up page loads
+    await page.route("**/*", (route: any) => {
+      const resourceType = route.request().resourceType();
+      if (["image", "font", "media"].includes(resourceType)) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
 
     // Navigate to registration page
     notifyClients(`Registering: ${email.slice(0, 15)}...`, "info");
@@ -234,13 +238,14 @@ async function registerWindsurfAccount(
       error: error.message || "Registration flow failed",
     };
   } finally {
-    if (browser) {
-      await browser.close();
+    if (context) {
+      await context.close();
     }
   }
 }
 
 export async function POST(request: Request) {
+  let browser;
   try {
     const config: AutomationRequest = await request.json();
 
@@ -251,59 +256,59 @@ export async function POST(request: Request) {
       );
     }
 
+    // Launch ONE shared browser for all accounts
+    browser = await chromium.launch({
+      headless: config.headless,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--disable-extensions",
+        "--no-first-run",
+        "--disable-background-networking",
+      ],
+    });
+
+    notifyClients(`Browser launched, starting ${config.accountCount} registrations...`, "system");
+
     const results: {
       email: string;
       success: boolean;
       error?: string;
     }[] = [];
 
-    const totalChunks = Math.ceil(config.accountCount / DEFAULT_CONCURRENCY);
+    // Process accounts sequentially (concurrency=1) using shared browser
+    for (let i = 0; i < config.accountCount; i++) {
+      // Small delay between accounts
+      if (i > 0) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
 
-    for (let chunk = 0; chunk < totalChunks; chunk++) {
-      const chunkSize = Math.min(
-        DEFAULT_CONCURRENCY,
-        config.accountCount - chunk * DEFAULT_CONCURRENCY
+      const mailAccount = await createMailTmAccount();
+      if (!mailAccount) {
+        notifyClients("Mail.tm account creation failed", "error");
+        results.push({
+          email: "failed",
+          success: false,
+          error: "Mail.tm account creation failed",
+        });
+        continue;
+      }
+
+      notifyClients(`Email created: ${mailAccount.email}`, "info");
+
+      const result = await registerWindsurfAccount(
+        mailAccount.email,
+        mailAccount.password,
+        config,
+        browser
       );
 
-      const chunkPromises = Array.from({ length: chunkSize }, async () => {
-        // Stagger requests slightly
-        await new Promise((r) =>
-          setTimeout(r, Math.random() * 1000 + 500)
-        );
-
-        const mailAccount = await createMailTmAccount();
-        if (!mailAccount) {
-          notifyClients("Mail.tm account creation failed", "error");
-          return {
-            email: "failed",
-            success: false,
-            error: "Mail.tm account creation failed",
-          };
-        }
-
-        notifyClients(`Email created: ${mailAccount.email}`, "info");
-
-        const result = await registerWindsurfAccount(
-          mailAccount.email,
-          mailAccount.password,
-          config
-        );
-
-        return {
-          email: mailAccount.email,
-          ...result,
-        };
+      results.push({
+        email: mailAccount.email,
+        ...result,
       });
-
-      const chunkResults = await Promise.all(chunkPromises);
-      results.push(...chunkResults);
-
-      if (chunk < totalChunks - 1) {
-        const hasFailures = chunkResults.some((r) => !r.success);
-        await new Promise((r) =>
-          setTimeout(r, hasFailures ? 15000 : 5000)
-        );
-      }
     }
 
     const successCount = results.filter((r) => r.success).length;
@@ -326,5 +331,9 @@ export async function POST(request: Request) {
       { error: "Automation request failed" },
       { status: 500 }
     );
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
