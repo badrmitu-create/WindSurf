@@ -40,14 +40,19 @@ export function markAccountUsed(id: number): Account | null {
   const accounts = getAccounts();
   const account = accounts.find((a) => a.id === id);
   if (!account) return null;
-  account.last_used_at = new Date().toISOString().split("T")[0];
+  account.last_used_at = getLocalToday();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
   return account;
 }
 
+function getLocalToday(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 export function getUnusedAccount(): Account | null {
   const accounts = getAccounts();
-  const today = new Date().toISOString().split("T")[0];
+  const today = getLocalToday();
   const unused = accounts.find((a) => a.last_used_at !== today);
   if (!unused) return null;
   markAccountUsed(unused.id);
@@ -56,7 +61,7 @@ export function getUnusedAccount(): Account | null {
 
 export function getStats(): DashboardStats {
   const accounts = getAccounts();
-  const today = new Date().toISOString().split("T")[0];
+  const today = getLocalToday();
   const usedToday = accounts.filter((a) => a.last_used_at === today).length;
   const unusedToday = accounts.length - usedToday;
   return {

@@ -8,7 +8,7 @@ import { AccountTable } from "@/components/dashboard/AccountTable";
 import { ActivityMonitor } from "@/components/dashboard/ActivityMonitor";
 import { Button } from "@/components/ui/Button";
 import { Play, Copy, RefreshCw } from "lucide-react";
-import type { DashboardStats } from "@/types";
+import type { DashboardStats, Account } from "@/types";
 import {
   getStats as getStoredStats,
   deleteAccount as deleteStoredAccount,
@@ -25,6 +25,7 @@ export default function DashboardPage() {
     status,
     setStatus,
     accounts,
+    setAccounts,
     refreshAccounts,
   } = useAutomation();
 
@@ -114,7 +115,12 @@ export default function DashboardPage() {
       if (account) {
         await navigator.clipboard.writeText(account.email);
         addLog({ level: "success", message: `Copied: ${account.email}` });
-        refreshData();
+        // Update state directly to ensure UI reflects the change
+        const updatedAccounts = accounts.map((a: Account) =>
+          a.id === account.id ? account : a
+        );
+        setAccounts(updatedAccounts);
+        setStats(getStoredStats());
       } else {
         addLog({ level: "warning", message: "No unused accounts available" });
       }
